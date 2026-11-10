@@ -22,10 +22,6 @@ struct AboutView: View {
                     .foregroundStyle(.secondary)
             }
 
-            Button(L10n.checkForUpdates) {
-                AppOrchestrator.shared.checkForUpdates()
-            }
-            .disabled(!AppOrchestrator.shared.canCheckForUpdates)
 
             Divider()
 

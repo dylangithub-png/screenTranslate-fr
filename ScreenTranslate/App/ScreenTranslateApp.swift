@@ -1,6 +1,5 @@
 import SwiftUI
 import KeyboardShortcuts
-import TelemetryDeck
 import os
 
 private let logger = Logger(subsystem: "com.app.screentranslate", category: "lifecycle")
@@ -43,11 +42,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // 로그인 실행 판정이 실제로 되는지 확인하기 위한 기록 (사전 확인에서 실측하지 못한 부분).
         // info는 디스크에 남지 않아 로그인 뒤 log show로 볼 수 없으므로 notice로 남긴다
         logger.notice("launch kind=\(String(describing: launchKind), privacy: .public) menuBarIconVisible=\(AppSettings.shared.showMenuBarIcon, privacy: .public)")
-
-        // TelemetryDeck 초기화
-        let config = TelemetryDeck.Config(appID: "D40DAE14-17FE-4D5E-86B9-294CA7E45B7F")
-        TelemetryDeck.initialize(config: config)
-        TelemetryDeck.signal("appLaunched")
 
         // 키보드 단축키 등록 — NSApplication 초기화 완료 후 안전하게 수행
         AppOrchestrator.shared.setup()

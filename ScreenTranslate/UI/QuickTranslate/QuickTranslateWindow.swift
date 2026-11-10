@@ -1,6 +1,5 @@
 import AppKit
 import SwiftUI
-import TelemetryDeck
 
 final class QuickTranslateWindow: NSPanel {
     /// 패널의 상태와 동작. 별도 TranslationCoordinator를 소유해 OCR/드래그 번역과 독립적으로 동작한다.
@@ -32,9 +31,7 @@ final class QuickTranslateWindow: NSPanel {
             targetLanguageCode: AppSettings.shared.targetLanguageCode,
             autoCopyEnabled: { AppSettings.shared.autoCopyToClipboard },
             copyToClipboard: { Clipboard.copy($0) },
-            telemetry: { engine in
-                TelemetryDeck.signal("quickTranslateCompleted", parameters: ["engine": engine])
-            }
+            telemetry: { _ in }
         )
 
         super.init(

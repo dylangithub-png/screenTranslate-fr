@@ -1,7 +1,6 @@
 import KeyboardShortcuts
 import ServiceManagement
 import SwiftUI
-import TelemetryDeck
 import Translation
 import UniformTypeIdentifiers
 
@@ -128,7 +127,6 @@ struct SettingsView: View {
         .alert(L10n.hideMenuBarIconTitle, isPresented: $showHideIconConfirm) {
             Button(L10n.hideMenuBarIconConfirm) {
                 showMenuBarIcon = false
-                TelemetryDeck.signal("menuBarIconHidden")
             }
             .keyboardShortcut(.defaultAction)
             Button(L10n.cancel, role: .cancel) {}
@@ -343,10 +341,6 @@ struct SettingsView: View {
                     }
                 }
 
-                Button(L10n.checkForUpdates) {
-                    AppOrchestrator.shared.checkForUpdates()
-                }
-                .disabled(!AppOrchestrator.shared.canCheckForUpdates)
 
                 // 메뉴바 메뉴에만 있던 항목 — 아이콘을 숨겨도 여기서 닿을 수 있어야 한다
                 HStack {

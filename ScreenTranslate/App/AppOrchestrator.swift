@@ -1,12 +1,9 @@
 import AppKit
-import Combine
 import CoreGraphics
 import KeyboardShortcuts
 import Observation
-import Sparkle
 import SwiftData
 import SwiftUI
-import TelemetryDeck
 
 /// UI 생명주기를 관리하는 싱글턴.
 /// 오버레이/팝업 윈도우 표시/숨김, 권한 확인, 사용자 인터랙션 처리.
@@ -50,24 +47,6 @@ final class AppOrchestrator {
     /// 번역 히스토리 관리자 — @Observable이 lazy를 지원하지 않으므로 추적 제외
     @ObservationIgnored
     lazy var historyManager = TranslationHistoryManager(modelContainer: modelContainer)
-
-    /// Sparkle 자동 업데이트 컨트롤러
-    @ObservationIgnored
-    let updaterController = SPUStandardUpdaterController(
-        startingUpdater: true,
-        updaterDelegate: nil,
-        userDriverDelegate: nil
-    )
-
-    /// Sparkle 업데이트 확인 가능 여부 — MenuBarView/AboutView에서 버튼 비활성화에 사용
-    private(set) var canCheckForUpdates = false
-
-    @ObservationIgnored
-    private var updateCancellable: AnyCancellable?
-
-    func checkForUpdates() {
-        updaterController.checkForUpdates(nil)
-    }
 
     /// 폴링 루프를 실행하는 Task — 새 번역 시작 시 취소한다.
     private var processingTask: Task<Void, any Error>?
@@ -132,11 +111,6 @@ final class AppOrchestrator {
         }
         updateLiveTranslateShortcut()
 
-        // Sparkle canCheckForUpdates KVO → @Observable 브리지
-        updateCancellable = updaterController.updater
-            .publisher(for: \.canCheckForUpdates)
-            .receive(on: RunLoop.main)
-            .assign(to: \.canCheckForUpdates, on: self)
     }
 
     /// 영역 선택이 진행 중인지 — 권한 확인 await 동안에도 true (H1: 단축키 연타로 오버레이 2개 생성 방지)
@@ -218,8 +192,6 @@ final class AppOrchestrator {
     private func observeAndRecord(
         popup: TranslationPopupWindow,
         rect: CGRect,
-        telemetryEvent: String,
-        telemetryParameters: [String: String] = [:],
         sourceTextFallback: String?
     ) async throws {
         for await state in coordinator.makeStateStream() {
@@ -228,9 +200,6 @@ final class AppOrchestrator {
 
             switch state {
             case .completed(let result):
-                var params = telemetryParameters
-                params["engine"] = coordinator.translationProvider.name
-                TelemetryDeck.signal(telemetryEvent, parameters: params)
                 historyManager.recordSuccess(
                     sourceText: result.sourceText,
                     translatedText: result.translatedText,
@@ -284,7 +253,7 @@ final class AppOrchestrator {
             showFailurePopup(L10n.noSelectedText)
             return
         }
-        await runTranslation(.text(selectedText, trigger: "shortcut"))
+        await runTranslation(.text(selectedText))
     }
 
     /// 마우스 커서 위치를 기반으로 팝업 배치용 가상 rect를 생성한다.
@@ -414,7 +383,7 @@ final class AppOrchestrator {
             showFailurePopup(L10n.noClipboardText)
             return
         }
-        await runTranslation(.text(clipboardText, trigger: "doubleCopy"))
+        await runTranslation(.text(clipboardText))
     }
 
     private func processCapture(rect: CGRect) async {
@@ -426,8 +395,7 @@ final class AppOrchestrator {
     /// 번역 입력. 캡처는 OCR을 거치고, 텍스트는 바로 번역한다.
     private enum TranslationInput {
         case capture(CGRect)
-        /// trigger: 텔레메트리용 ("shortcut" | "doubleCopy")
-        case text(String, trigger: String)
+        case text(String)
     }
 
     /// 커서 근처에 실패 메시지 팝업을 띄운다 (번역할 텍스트를 얻지 못한 경우).
@@ -448,19 +416,14 @@ final class AppOrchestrator {
         popupWindow = popup
 
         let rect: CGRect
-        let telemetryEvent: String
-        var telemetryParameters: [String: String] = [:]
         let sourceTextFallback: String?
         switch input {
         case .capture(let captureRect):
             rect = captureRect
-            telemetryEvent = "translationCompleted"
             sourceTextFallback = nil
             popup.show(state: .recognizing, near: rect, on: currentScreen)
-        case .text(let text, let trigger):
+        case .text(let text):
             rect = cursorScreenRect()
-            telemetryEvent = "dragTranslationCompleted"
-            telemetryParameters["trigger"] = trigger
             sourceTextFallback = text
             popup.show(state: .translating, near: rect, on: currentScreen)
         }
@@ -470,14 +433,12 @@ final class AppOrchestrator {
             case .capture(let captureRect):
                 let image = try await capturer.capture(rect: captureRect, screen: currentScreen)
                 coordinator.startProcessing(image: image, preprocessOCR: AppSettings.shared.ocrTextPreprocessing)
-            case .text(let text, _):
+            case .text(let text):
                 coordinator.startProcessing(text: text)
             }
             try await observeAndRecord(
                 popup: popup,
                 rect: rect,
-                telemetryEvent: telemetryEvent,
-                telemetryParameters: telemetryParameters,
                 sourceTextFallback: sourceTextFallback
             )
         } catch is CancellationError {
@@ -619,7 +580,6 @@ final class AppOrchestrator {
     @ObservationIgnored private var liveSession: LiveTranslationSession?
     @ObservationIgnored private var liveRegionWindow: LiveRegionWindow?
     @ObservationIgnored private var liveSubtitleBar: LiveSubtitleBar?
-    @ObservationIgnored private var liveStartedAt: Date?
     @ObservationIgnored private var liveObservers: [(center: NotificationCenter, token: NSObjectProtocol)] = []
     @ObservationIgnored private let liveCapturer = RegionScreenCapturer()
     @ObservationIgnored private let liveTranslator = AppleTranslationProvider()
@@ -711,12 +671,10 @@ final class AppOrchestrator {
         liveSession = session
         liveRegionWindow = regionWindow
         liveSubtitleBar = bar
-        liveStartedAt = Date()
         isLiveTranslating = true
         installLiveObservers()
         regionWindow.show()
         session.start()
-        TelemetryDeck.signal("liveTranslateStarted")
     }
 
     private func refreshLiveSubtitleBar(_ display: LiveTranslationSession.Display) {
@@ -726,21 +684,13 @@ final class AppOrchestrator {
     }
 
     private func liveSessionDidStop(_ reason: LiveTranslationSession.StopReason) {
-        let translations = liveSession?.translationCount ?? 0
-        let duration = liveStartedAt.map { Date().timeIntervalSince($0) } ?? 0
         removeLiveObservers()
         liveRegionWindow?.close()
         liveSubtitleBar?.close()
         liveRegionWindow = nil
         liveSubtitleBar = nil
         liveSession = nil
-        liveStartedAt = nil
         isLiveTranslating = false
-        TelemetryDeck.signal("liveTranslateStopped", parameters: [
-            "reason": LiveTelemetry.reasonName(reason),
-            "duration": LiveTelemetry.durationBucket(duration),
-            "translations": translations == 0 ? "0" : (translations < 20 ? "1-19" : "20+"),
-        ])
         if case .captureFailed(let message) = reason {
             currentScreen = NSScreen.underMouse
             showFailurePopup(L10n.liveTranslateStopped(message))
