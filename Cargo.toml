@@ -1,0 +1,3 @@
+[workspace]
+members = ["crates/markdown"]
+resolver = "2"

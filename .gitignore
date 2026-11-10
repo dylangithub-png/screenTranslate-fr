@@ -59,3 +59,5 @@ skills-lock.json
 scripts/compare_engines.swift
 scripts/compare_engines_reverse.swift
 script_result.md
+/build/
+/target/
